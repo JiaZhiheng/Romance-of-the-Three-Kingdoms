@@ -2,84 +2,87 @@ import { defineConfig } from 'vitepress';
 import fs from 'fs';
 import path from 'path';
 
-// 定义一个函数，从项目名中提取排序序号和名称
+/**
+ * 从文件/目录名中提取排序序号和显示名称
+ * 例如: "01-桃园三结义" => { order: "01", name: "桃园三结义" }
+ */
 function extractOrderAndName(item) {
-  // 使用正则表达式匹配项目名，提取序号和名称
-  const match = item.match(/^(\d+)?[-_]?(.*)/);
-  // 如果有序号，将其转换为整数，否则序号为 -1
-  const order = match[1] !== undefined ? match[1].padStart(2, '0') : -1;
-  const name = match[2]; // 名称为正则表达式匹配的第二部分
-  return { order, name };
+  const match = item.match(/^(\d+)-(.+)/);
+  if (match) {
+    return { order: match[1].padStart(2, '0'), name: match[2] };
+  }
+  return { order: null, name: item };
 }
 
-// 定义一个生成侧边栏的函数，传入目录路径和基本路径（默认为根路径）
+/**
+ * 自动生成侧边栏配置
+ * @param {string} directoryPath - 文件系统中的目录路径
+ * @param {string} basePath - URL 基础路径
+ */
 function generateSidebar(directoryPath, basePath = '/') {
-  const sidebar = []; // 初始化空的侧边栏数组
-  const items = fs.readdirSync(directoryPath); // 同步读取目录下的所有项目（文件和子目录）
+  const items = fs.readdirSync(directoryPath);
 
-  // 对项目进行排序，根据提取的序号进行排序
-  const sortedItems = items.sort((a, b) => {
-    const aInfo = extractOrderAndName(a);
-    const bInfo = extractOrderAndName(b);
+  const sortedItems = items
+    .filter((item) => !item.startsWith('.')) // 过滤隐藏文件
+    .sort((a, b) => {
+      const aInfo = extractOrderAndName(a);
+      const bInfo = extractOrderAndName(b);
 
-    // 如果两个项目都没有序号，按名称进行字母排序
-    if (aInfo.order === -1 && bInfo.order === -1) {
-      return aInfo.name.localeCompare(bInfo.name);
-    }
+      if (aInfo.order === null && bInfo.order === null) {
+        return aInfo.name.localeCompare(bInfo.name);
+      }
+      if (aInfo.order === null) return 1;
+      if (bInfo.order === null) return -1;
+      return aInfo.order.localeCompare(bInfo.order);
+    });
 
-    // 如果一个项目没有序号，将其排在有序号的项目后面
-    if (aInfo.order === -1) return 1;
-    if (bInfo.order === -1) return -1;
+  const sidebar = [];
 
-    // 如果两个项目都有序号，按序号进行排序
-    return aInfo.order - bInfo.order;
-  });
+  for (const item of sortedItems) {
+    const itemPath = path.join(directoryPath, item);
+    const stat = fs.statSync(itemPath);
 
-  // 遍历排序后的项目
-  sortedItems.forEach((item) => {
-    const itemPath = path.join(directoryPath, item); // 拼接项目的完整路径
-    const stat = fs.statSync(itemPath); // 同步获取项目的文件状态
-
-    // 判断项目是否为目录
     if (stat.isDirectory()) {
-      const { order, name } = extractOrderAndName(item); // 提取目录名，去除序号
-      // 递归调用generateSidebar函数处理子目录
-      const nestedSidebar = generateSidebar(itemPath, basePath + order + '-' + name + '/');
-      // 如果子目录有内容，将其添加到侧边栏数组中
+      const { name } = extractOrderAndName(item);
+      const nestedSidebar = generateSidebar(itemPath, `${basePath}${item}/`);
       if (nestedSidebar.length > 0) {
         sidebar.push({
-          text: name, // 目录名作为侧边栏文本
-          collapsed: true, // 为每个文件夹添加 collapsed 属性并设置为 true，显示切换按钮来隐藏/显示每个部分
-          items: nestedSidebar // 嵌套的侧边栏作为子项
+          text: name,
+          collapsed: true,
+          items: nestedSidebar
         });
       }
     } else if (stat.isFile() && item.endsWith('.md')) {
-      // 判断项目是否为Markdown文件
-      const { name } = extractOrderAndName(item); // 提取文件名，去除序号
-      const title = name.replace(/\.md$/, ''); // 从文件名中去掉.md后缀，作为侧边栏文本
-      const link = path.join(basePath, item).replace(/\.md$/, '.html'); // 生成该Markdown文件的链接
+      const { name } = extractOrderAndName(item);
+      const title = name.replace(/\.md$/, '');
+      // 使用 posix 风格路径，避免 Windows 下反斜杠问题
+      const link = `${basePath}${item}`.replace(/\.md$/, '');
       sidebar.push({
-        text: title, // 文件名作为侧边栏文本
-        link: link.startsWith('/') ? link : `/${link}` // 确保链接以/开头
+        text: title,
+        link: link.startsWith('/') ? link : `/${link}`
       });
     }
-  });
-  // 返回生成的侧边栏数组
+  }
+
   return sidebar;
 }
 
 export default defineConfig({
+  // 部署到 GitHub Pages 时需要设置 base
+  // 如果部署到 https://<user>.github.io/<repo>/，请设置为 '/<repo>/'
+  // 如果部署到 https://<user>.github.io/，设置为 '/'
+  base: '/Romance-of-the-Three-Kingdoms/',
   title: '三国演义',
   description: '94版三国演义剧本',
   themeConfig: {
     nav: [
       { text: '主页', link: '/' },
-      { text: '剧本', link: '/.vitepress/guide/三国演义/01-群雄逐鹿/01-桃园三结义' }
+      { text: '剧本', link: '/guide/三国演义/01-群雄逐鹿/01-桃园三结义' }
     ],
     sidebar: {
-      '/.vitepress/guide/三国演义/': generateSidebar(
-        './docs/.vitepress/guide/三国演义/',
-        '/.vitepress/guide/三国演义/'
+      '/guide/三国演义/': generateSidebar(
+        './docs/guide/三国演义/',
+        '/guide/三国演义/'
       )
     },
     socialLinks: [{ icon: 'github', link: 'https://github.com/vuejs/vitepress' }]
